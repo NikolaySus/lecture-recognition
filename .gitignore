@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+/record/*
+!/record/20260925_101716.review.md
+/.lecture-cache/

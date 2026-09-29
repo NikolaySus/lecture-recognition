@@ -1,0 +1,37 @@
+[project]
+name = "lecture-recognition"
+version = "0.1.0"
+description = "CUDA lecture diarization and Russian SRT transcription"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "torch==2.9.1", "transformers", "numpy>=2,<3", "soundfile>=0.13",
+  "librosa>=0.11", "accelerate>=1.10", "tqdm>=4.67",
+]
+
+[project.scripts]
+lecture-recognition = "lecture_recognition.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.12"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+transformers = { git = "https://github.com/huggingface/transformers", rev = "5e4d6304de5536bc808187e5951f5e8794211229" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
