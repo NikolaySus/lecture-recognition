@@ -219,3 +219,12 @@ __marimo__/
 /record/*
 !/record/20260925_101716.review.md
 /.lecture-cache/
+
+!/record/20260925_101716.channel-validation.review.md
+
+# Generated recordings, reports, previews and third-party model downloads
+/output/
+/tmp/
+/experiments/*/vendor/
+/experiments/brouhaha/model.json
+/.transcription-jobs/

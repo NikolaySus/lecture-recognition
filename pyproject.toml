@@ -4,8 +4,16 @@ version = "0.1.0"
 description = "CUDA lecture diarization and Russian SRT transcription"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-  "torch==2.9.1", "transformers", "numpy>=2,<3", "soundfile>=0.13",
-  "librosa>=0.11", "accelerate>=1.10", "tqdm>=4.67",
+  "torch==2.9.1",
+  "transformers",
+  "numpy>=2,<3",
+  "soundfile>=0.13",
+  "librosa>=0.11",
+  "accelerate>=1.10",
+  "tqdm>=4.67",
+  "pypdf>=6.19.0",
+  "reportlab>=5.0.1",
+  "matplotlib>=3.11.2",
 ]
 
 [project.scripts]

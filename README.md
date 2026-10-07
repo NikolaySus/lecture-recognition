@@ -11,6 +11,19 @@ Qwen3 ForcedAligner 0.6B → SRT. Русский язык используетс
 [инструкция для Codex на другой машине](docs/experiments-handoff.md) и
 [последовательность экспериментов](docs/experiments-roadmap.md).
 
+Для GigaAM CTC/RNNT подготовлена [серия без дообучения](docs/gigaam-tuning.md):
+нарезка, аудио, beam search, словарь и PDF со всеми допустимыми вариантами.
+Все 45 прогонов завершены. Лучшие варианты — CTC combination и RNNT left;
+[итоговый PDF](output/pdf/r001-r008-gigaam-experiments.pdf).
+
+Подготовлена отдельная [серия динамических каналов](docs/gigaam-dynamic-channels.md):
+12 новых конфигураций и пять фиксированных сравнений. Смеси готовы;
+новые ASR-прогоны ожидают доступной CUDA. [Предварительный PDF](output/pdf/r001-r008-gigaam-dynamic-channels.pdf).
+
+Для многомодельной серии добавлен [отдельный runner](docs/model-benchmark.md):
+подготовка оценки без производственного кэша, Qwen/GigaAM/Whisper/Parakeet,
+словарный пилот и отдельный полный SRT. Он не меняет рабочую транскрипцию.
+
 ## Установка (Windows / PowerShell)
 
 Требуются NVIDIA GPU, актуальный драйвер, FFmpeg в `PATH` и
