@@ -42,10 +42,17 @@ def load(kind, revision):
         "alignment": AutoModelForTokenClassification,
     }[kind]
     name = MODEL_IDS[kind]
-    processor = AutoProcessor.from_pretrained(name, revision=revision)
     dtype = torch.float32 if kind == "diarization" else torch.bfloat16
-    model = cls.from_pretrained(name, revision=revision, dtype=dtype).to("cuda").eval()
-    return processor, model
+    for local_only in (True, False):
+        try:
+            processor = AutoProcessor.from_pretrained(name, revision=revision, local_files_only=local_only)
+            model = cls.from_pretrained(name, revision=revision, dtype=dtype, local_files_only=local_only).to("cuda").eval()
+            return processor, model
+        except OSError:
+            if not local_only:
+                raise
+            log.info("Missing cached %s files; downloading the pinned revision", kind)
+    raise RuntimeError("Model loading failed")
 
 
 def diarization_inputs(processor, audio):

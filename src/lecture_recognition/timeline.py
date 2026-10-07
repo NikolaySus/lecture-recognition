@@ -29,13 +29,16 @@ def student_only_regions(segments, duration, speaker):
     return [(a / 100, min(duration, b / 100)) for a, b in runs(excluded)]
 
 
-def lecturer_regions(segments, duration, max_gap=0.8):
+def lecturer_regions(segments, duration, max_gap=0.8, speaker=None):
     masks = speaker_masks(segments, duration)
     n = masks.shape[1]
     totals = masks.sum(axis=1)
     if not totals.any():
         return None, [], totals.tolist()
-    speaker = int(totals.argmax())
+    if speaker is None:
+        speaker = int(totals.argmax())
+    elif not 0 <= speaker < 8 or not totals[speaker]:
+        raise ValueError('Requested speaker has no speech in the recording')
     selected = masks[speaker].copy()
     other_only = masks[np.arange(8) != speaker].any(axis=0) & ~selected
     # Extend into silence only; never leap across another speaker's turn.

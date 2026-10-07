@@ -1,7 +1,7 @@
 [project]
 name = "lecture-recognition"
-version = "0.1.0"
-description = "CUDA lecture diarization and Russian SRT transcription"
+version = "0.2.0"
+description = "Local equal-channel lecture transcription MCP and Codex reconciliation skill"
 requires-python = ">=3.12,<3.13"
 dependencies = [
   "torch==2.9.1",
@@ -11,17 +11,30 @@ dependencies = [
   "librosa>=0.11",
   "accelerate>=1.10",
   "tqdm>=4.67",
-  "pypdf>=6.19.0",
-  "reportlab>=5.0.1",
-  "matplotlib>=3.11.2",
+  "mcp>=1.12,<2",
+  "filelock>=3.16",
+  "psutil>=7",
 ]
 
 [project.scripts]
+lecture-transcription-mcp = "lecture_recognition.mcp_server:main"
 lecture-recognition = "lecture_recognition.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/lecture_recognition", "pyproject.toml", "uv.lock", "README.md", "LICENSE", "experiments/gigaam/pyproject.toml", "experiments/gigaam/uv.lock"]
+
+[tool.hatch.build.targets.sdist.force-include]
+"src/lecture_recognition/skills/lecture-transcription/SKILL.md" = "src/lecture_recognition/skills/lecture-transcription/SKILL.md"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/lecture_recognition"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"src/lecture_recognition/skills/lecture-transcription/SKILL.md" = "lecture_recognition/skills/lecture-transcription/SKILL.md"
 
 [dependency-groups]
 dev = ["pytest>=8", "ruff>=0.12"]
