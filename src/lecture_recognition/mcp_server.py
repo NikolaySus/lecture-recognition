@@ -20,6 +20,19 @@ class Revision(BaseModel):
     origin: Literal['agent', 'user'] = 'agent'
 
 
+class ReferenceMaterial(BaseModel):
+    id: str | None = None
+    title: str = ''
+    source: str = ''
+    original_text: str | None = None
+    text: str = Field(min_length=1)
+    window: tuple[float, float] | None = None
+    usage: Literal['context', 'ground_truth', 'both'] = 'context'
+    origin: Literal['agent', 'user'] = 'agent'
+    confirmed_by: Literal['none', 'agent', 'user'] = 'none'
+    reason: str = Field(min_length=1)
+
+
 def create_server(service):
     mcp = FastMCP('lecture-transcription', instructions=(
         'Transcribe local Russian lectures using two equal CTC channels. '
@@ -65,6 +78,26 @@ def create_server(service):
         presentation only, for checking order bias. Returns revision for save_revision.
         """
         return service.get_segments(job_id, offset, limit, unresolved_only, reverse_order)
+
+    @mcp.tool(annotations=mutation)
+    def save_references(job_id: str, references: list[ReferenceMaterial], expected_revision: int) -> dict[str, Any]:
+        """Save 1-50 user materials or full updated versions, before or after ASR.
+
+        Omit id and supply original_text to create; pass returned id to update.
+        Original text is immutable. title or source and reason are required.
+        window is seconds on the job timeline; ground_truth/both require it.
+        confirmed_by is explicit provenance, never inferred from editing.
+        Uses the same revision as save_revision. Does not rerun ASR or apply decisions.
+        """
+        return service.save_references(job_id, [r.model_dump() for r in references], expected_revision)
+
+    @mcp.tool(annotations=readonly)
+    def get_references(job_id: str, offset: int = 0, limit: int = 5) -> dict[str, Any]:
+        """Read full original/current materials and their histories, including global context.
+
+        Available while ASR runs. Returns shared revision for subsequent writes.
+        """
+        return service.get_references(job_id, offset, limit)
 
     @mcp.tool(annotations=readonly)
     def get_raw_transcripts(job_id: str, channel: Literal['A', 'B'] = 'A', offset: int = 0, limit: int = 5) -> dict[str, Any]:

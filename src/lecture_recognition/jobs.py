@@ -1,8 +1,10 @@
 """Durable jobs and optimistic, atomic revision batches; no LLM calls inside MCP."""
 import json
+import math
 import re
 import sqlite3
 import time
+import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -20,6 +22,10 @@ class JobStore:
                     state TEXT NOT NULL, revision INTEGER NOT NULL DEFAULT 0, created REAL NOT NULL);
                 CREATE TABLE IF NOT EXISTS segments (job TEXT NOT NULL, id TEXT NOT NULL, data TEXT NOT NULL,
                     decision TEXT NOT NULL, PRIMARY KEY(job,id));
+                CREATE TABLE IF NOT EXISTS reference_materials (job TEXT NOT NULL, id TEXT NOT NULL,
+                    data TEXT NOT NULL, PRIMARY KEY(job,id));
+                CREATE TABLE IF NOT EXISTS reference_history (job TEXT NOT NULL, revision INTEGER NOT NULL,
+                    changes TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(job,revision));
                 CREATE TABLE IF NOT EXISTS revisions (job TEXT NOT NULL, revision INTEGER NOT NULL,
                     changes TEXT NOT NULL, created REAL NOT NULL, PRIMARY KEY(job,revision));
             ''')
@@ -132,6 +138,80 @@ class JobStore:
             db.execute('INSERT INTO revisions VALUES(?,?,?,?)', (job_id, version, json.dumps(changes, ensure_ascii=False), time.time()))
         return version
 
+    def save_references(self, job_id, references, expected_revision):
+        """Save full material versions without touching ASR inputs or segment decisions."""
+        self.folder(job_id)
+        if not references or len(references) > 50:
+            raise ValueError('Supply 1-50 reference materials')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            job = db.execute('SELECT * FROM jobs WHERE id=?', (job_id,)).fetchone()
+            if job is None:
+                raise ValueError('Unknown job')
+            if job['revision'] != expected_revision:
+                raise ValueError('Revision changed; reread references or segments before saving')
+            request, state = json.loads(job['request']), json.loads(job['state'])
+            duration = state.get('duration', request.get('audio_info', {}).get('duration'))
+            if request.get('limit_seconds') is not None:
+                duration = min(duration, request['limit_seconds']) if duration is not None else request['limit_seconds']
+            saved, seen = [], set()
+            for reference in references:
+                value = dict(reference)
+                ref_id = value.get('id')
+                if ref_id is None:
+                    ref_id = uuid.uuid4().hex
+                    previous = None
+                else:
+                    if not isinstance(ref_id, str) or not re.fullmatch(r'[0-9a-f]{32}', ref_id):
+                        raise ValueError('Invalid reference ID')
+                    row = db.execute('SELECT data FROM reference_materials WHERE job=? AND id=?', (job_id, ref_id)).fetchone()
+                    if row is None:
+                        raise ValueError('Unknown reference; omit ID to create a material')
+                    previous = json.loads(row['data'])
+                if ref_id in seen:
+                    raise ValueError('Duplicate reference updates')
+                seen.add(ref_id)
+                original = value.get('original_text')
+                if previous:
+                    if original is not None and original != previous['original_text']:
+                        raise ValueError('Original text is immutable')
+                    original = previous['original_text']
+                for name, text in (('original_text', original), ('text', value.get('text')), ('reason', value.get('reason'))):
+                    if not isinstance(text, str) or not text.strip():
+                        raise ValueError(f'{name} must be nonempty')
+                title, source = value.get('title', ''), value.get('source', '')
+                if not isinstance(title, str) or not isinstance(source, str) or not (title.strip() or source.strip()):
+                    raise ValueError('Supply a title or source for the material')
+                usage = value.get('usage', 'context')
+                origin = value.get('origin', 'agent')
+                confirmed_by = value.get('confirmed_by', 'none')
+                if usage not in ('context', 'ground_truth', 'both'):
+                    raise ValueError('Invalid reference usage')
+                if origin not in ('agent', 'user') or confirmed_by not in ('none', 'agent', 'user'):
+                    raise ValueError('Invalid reference provenance')
+                window = value.get('window')
+                if window is None and usage in ('ground_truth', 'both'):
+                    raise ValueError('Ground truth requires a time interval')
+                if window is not None:
+                    if (not isinstance(window, (list, tuple)) or len(window) != 2
+                            or any(type(v) not in (int, float) or not math.isfinite(v) for v in window)
+                            or not 0 <= window[0] < window[1]):
+                        raise ValueError('Invalid reference interval')
+                    if duration is None or window[1] > duration:
+                        raise ValueError('Reference interval must be within the job audio timeline')
+                    window = list(window)
+                material = {'id': ref_id, 'title': title, 'source': source, 'original_text': original,
+                            'text': value['text'], 'window': window, 'usage': usage, 'origin': origin,
+                            'confirmed_by': confirmed_by, 'reason': value['reason']}
+                db.execute('INSERT INTO reference_materials VALUES(?,?,?) ON CONFLICT(job,id) DO UPDATE SET data=excluded.data',
+                           (job_id, ref_id, json.dumps(material, ensure_ascii=False)))
+                saved.append(material)
+            version = expected_revision + 1
+            db.execute('UPDATE jobs SET revision=? WHERE id=?', (version, job_id))
+            db.execute('INSERT INTO reference_history VALUES(?,?,?,?)',
+                       (job_id, version, json.dumps(saved, ensure_ascii=False), time.time()))
+        return version, saved
+
     def history(self, job_id):
         with self.db() as db:
             return [{'revision': r['revision'], 'changes': json.loads(r['changes']), 'created': r['created']}
@@ -148,5 +228,10 @@ class JobStore:
                         for r in db.execute('SELECT data,decision FROM segments WHERE job=? ORDER BY id', (job_id,))]
             history = [{'revision': r['revision'], 'changes': json.loads(r['changes']), 'created': r['created']}
                        for r in db.execute('SELECT * FROM revisions WHERE job=? ORDER BY revision', (job_id,))]
+            references = [json.loads(r['data']) for r in db.execute(
+                'SELECT data FROM reference_materials WHERE job=? ORDER BY rowid', (job_id,))]
+            reference_history = [{'revision': r['revision'], 'changes': json.loads(r['changes']), 'created': r['created']}
+                                 for r in db.execute('SELECT * FROM reference_history WHERE job=? ORDER BY revision', (job_id,))]
             return {'job_id': job_id, 'request': json.loads(job['request']), 'state': json.loads(job['state']),
-                    'revision': job['revision'], 'segments': segments, 'history': history}
+                    'revision': job['revision'], 'segments': segments, 'history': history,
+                    'references': references, 'reference_history': reference_history}

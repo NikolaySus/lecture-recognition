@@ -148,15 +148,40 @@ class TranscriptionService:
         all_segments = snapshot['segments']
         selected = [s for s in all_segments if not unresolved_only or s['decision']['status'] != 'resolved']
         page = selected[offset:offset + limit]
+        matched = set()
         for segment in page:
+            a, b = segment['window']
+            segment['reference_ids'] = [r['id'] for r in snapshot['references']
+                                        if r['window'] is not None and r['window'][0] < b and a < r['window'][1]]
+            matched.update(segment['reference_ids'])
             i = next(i for i, s in enumerate(all_segments) if s['id'] == segment['id'])
             segment['neighbours'] = [{'id': s['id'], 'variants': {c: v['text'] for c, v in s['variants'].items()}}
                                      for s in all_segments[max(0, i - 1):i + 2] if s['id'] != segment['id']]
             if reverse_order:
                 segment['variants'] = dict(reversed(list(segment['variants'].items())))
         return {'job_id': job_id, 'revision': snapshot['revision'], 'context': snapshot['request']['context'],
+                'references': [{k: r[k] for k in ('id', 'title', 'source', 'window', 'usage', 'confirmed_by')}
+                               for r in snapshot['references'] if r['id'] in matched],
+                'reference_count': len(snapshot['references']),
+                'other_reference_count': len(snapshot['references']) - len(matched),
                 'segments': page, 'total': len(selected), 'next_offset': offset + len(page) if offset + len(page) < len(selected) else None,
                 'confidence_note': 'Greedy entropy proxy, not a calibrated probability of the beam text'}
+
+    def save_references(self, job_id, references, expected_revision):
+        version, saved = self.store.save_references(job_id, references, expected_revision)
+        return {'job_id': job_id, 'revision': version, 'saved': len(saved), 'reference_ids': [r['id'] for r in saved]}
+
+    def get_references(self, job_id, offset=0, limit=5):
+        if offset < 0 or not 1 <= limit <= 20:
+            raise ValueError('Offset must be nonnegative; limit 1-20')
+        snapshot = self.store.snapshot(job_id)
+        materials = snapshot['references']
+        page = materials[offset:offset + limit]
+        ids = {r['id'] for r in page}
+        history = [{**event, 'changes': [r for r in event['changes'] if r['id'] in ids]}
+                   for event in snapshot['reference_history'] if any(r['id'] in ids for r in event['changes'])]
+        return {'job_id': job_id, 'revision': snapshot['revision'], 'references': page, 'history': history,
+                'total': len(materials), 'next_offset': offset + len(page) if offset + len(page) < len(materials) else None}
 
     def get_raw_transcripts(self, job_id, channel='A', offset=0, limit=5):
         if channel not in ('A', 'B') or offset < 0 or not 1 <= limit <= 20:

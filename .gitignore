@@ -228,3 +228,6 @@ __marimo__/
 /experiments/*/vendor/
 /experiments/brouhaha/model.json
 /.transcription-jobs/
+
+# Local user-provided reference pack for end-to-end testing
+/notes.md
